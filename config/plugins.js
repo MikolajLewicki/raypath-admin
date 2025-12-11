@@ -2,7 +2,7 @@ module.exports = ({env}) => ({
   'strapi-plugin-sso': {
     enabled: true,
     config: {
-      OIDC_REDIRECT_URI: "https://healing-sunshine-c3087bad90.strapiapp.com/user-info/oidc-data",
+      OIDC_REDIRECT_URI: "https://healing-sunshine-c3087bad90.strapiapp.com/api/user-info/oidc-data",
       OIDC_CLIENT_ID: "oauthApp",
       OIDC_CLIENT_SECRET: "8u2L-E7RJ",
       OIDC_SCOPES: "openid profile email api-pa",
