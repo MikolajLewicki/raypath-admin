@@ -1,60 +1,70 @@
-// Używamy wbudowanego Buffer, tak jak w Auth.js
 const { Buffer } = require('buffer'); 
 
 module.exports = {
   async getUserInfo(ctx) {
-    const { id_token } = ctx.request.query;
-    console.log("-------------", ctx.request.query);
+    // 1. Sprawdzenie nagłówka Authorization (jak w logach)
+    const authHeader = ctx.request.headers.authorization;
+    let token = null;
 
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Wyodrębnienie tokena z formatu "Bearer [token]"
+      token = authHeader.substring(7);
+    }
 
-    if (!id_token) {
-      // Dalsze sprawdzanie nagłówka dla pełnej zgodności z OIDC, choć najpewniej token jest w URL
-      const authHeader = ctx.request.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-         // Tutaj mogłaby być logika, jeśli plugin SSO wysyła id_token jako Access Token
-      }
-      return ctx.badRequest('ID Token is missing from query parameters.');
+    if (!token) {
+      // Odrzucenie żądania, jeśli nagłówek jest pusty/nieprawidłowy
+      return ctx.badRequest('Authorization header with Bearer token is missing.');
     }
 
     try {
-      // 1. Ręczne dekodowanie ID Tokena (tak jak w Auth.js)
-      if (!id_token.split('.')[1]) {
-           return ctx.badRequest('Invalid ID Token format (missing body).');
+      // 2. Ręczne dekodowanie tokena (zakładamy, że to jest ID Token/JWT)
+      const parts = token.split('.');
+      
+      if (parts.length !== 3) {
+           return ctx.badRequest('Invalid token format: Token is not a standard JWT (Expected 3 parts).');
       }
 
-      const decodedBody = Buffer.from(id_token.split('.')[1], "base64").toString();
+      // Dekodowanie środkowej części (payload)
+      const decodedBody = Buffer.from(parts[1], "base64").toString();
       const decoded = JSON.parse(decodedBody);
 
       if (!decoded) {
-        return ctx.badRequest('Invalid ID Token format.');
+        return ctx.badRequest('Error decoding token payload.');
       }
 
-      // 2. Mapowanie pól użytkownika
-      // Używamy pól znalezionych w Pana konfiguracji Auth.js:
+      // 3. Mapowanie pól użytkownika
+      // Używamy struktury danych z Pana konfiguracji NextAuth:
       const userInfo = {
-        sub: decoded.sub,
-        email: decoded.email.email, // Na podstawie Pana konfiguracji: decoded.email?.email
-        given_name: decoded.profile?.name, // Używamy 'name' z profilu jako 'given_name'
-        family_name: 'IdOSell User', // Ustawiamy stałą wartość lub wstawiamy 'undefined'
+        // sub jest wymagane jako unikalne ID
+        sub: decoded.sub, 
+        
+        // Zgodnie z Pana konfiguracją: decoded.email?.email
+        email: decoded.email && decoded.email.email ? decoded.email.email : null, 
+        
+        // Zgodnie z Pana konfiguracją: decoded.profile?.name
+        // Mapujemy na pola wymagane przez plugin SSO: given_name i family_name
+        given_name: decoded.profile && decoded.profile.name ? decoded.profile.name : 'IdoSell', 
+        family_name: decoded.sub || 'User', // Używamy sub jako backup
       };
       
-      // Zgodnie z tym, co widzę w Pana konfiguracji:
-      // - Strapi wymaga `given_name` i `family_name`
-      // - Pana dekodowanie z Auth.js używa `name: decoded.profile?.name`
-      // Musimy zdecydować, które pola ma zwrócić nasz endpoint, aby plugin SSO je przyjął.
+      if (!userInfo.email) {
+          return ctx.badRequest('Email field (decoded.email.email) not found in token payload.');
+      }
       
+      // 4. Zwrócenie danych
+      // To jest format, którego oczekuje plugin SSO, aby utworzyć lub zaktualizować użytkownika.
       return {
         email: userInfo.email,
-        // Strapi SSO domyślnie oczekuje 'given_name' i 'family_name'
-        given_name: userInfo.given_name || 'IdoSell', 
-        family_name: userInfo.family_name || userInfo.sub, // Użyjemy sub jako zastępstwo dla Family Name
-        // Dodatkowe pole, które Strapi może wymagać do identyfikacji
-        sub: userInfo.sub
+        given_name: userInfo.given_name, 
+        family_name: userInfo.family_name,
+        // (Ważne: upewnij się, że nazwy pól są takie same, jak w konfiguracji Strapi SSO)
+        // OIDC_GIVEN_NAME_FIELD => given_name
+        // OIDC_FAMILY_NAME_FIELD => family_name
       };
       
     } catch (error) {
-      console.error('Error processing ID Token:', error);
-      return ctx.badRequest(`Error processing ID Token: ${error.message}`);
+      console.error('Error processing ID Token in custom controller:', error.message);
+      return ctx.badRequest(`Internal Controller Error: ${error.message}`);
     }
   },
 };
