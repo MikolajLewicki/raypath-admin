@@ -3,8 +3,9 @@ const { Buffer } = require('buffer');
 
 module.exports = {
   async getUserInfo(ctx) {
-    const config = strapi.config.get('plugin::strapi-plugin-sso');
     const { id_token } = ctx.request.query;
+    console.log("-------------", ctx.request.query);
+
 
     if (!id_token) {
       // Dalsze sprawdzanie nagłówka dla pełnej zgodności z OIDC, choć najpewniej token jest w URL
